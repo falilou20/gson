@@ -135,17 +135,11 @@ public final class JsonParser {
    */
   public static JsonElement parseReader(JsonReader reader)
       throws JsonIOException, JsonSyntaxException {
-    Strictness strictness = reader.getStrictness();
-    if (strictness == Strictness.LEGACY_STRICT) {
-      // For backward compatibility change to LENIENT if reader has default strictness LEGACY_STRICT
-      reader.setStrictness(Strictness.LENIENT);
-    }
-    try {
+    try (GsonIo.ReaderContext context = GsonIo.beginLenientParse(reader)) {
+      context.ensureOpen();
       return Streams.parse(reader);
     } catch (StackOverflowError | OutOfMemoryError e) {
       throw new JsonParseException("Failed parsing JSON source: " + reader + " to Json", e);
-    } finally {
-      reader.setStrictness(strictness);
     }
   }
 
