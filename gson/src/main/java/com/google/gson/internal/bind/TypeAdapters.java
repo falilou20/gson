@@ -47,6 +47,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.StringTokenizer;
 import java.util.UUID;
+import java.util.function.IntFunction;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
@@ -60,6 +61,77 @@ import java.util.concurrent.atomic.AtomicLongArray;
 public final class TypeAdapters {
   private TypeAdapters() {
     throw new UnsupportedOperationException();
+  }
+
+  /**
+   * Reads an integral JSON number, optionally null, and narrows it to {@code byte} or {@code short}
+   * after a range check (supports unsigned upper bounds per adapter).
+   */
+  private static Number readIntegralNumberWithRangeCheck(
+      JsonReader in,
+      int minInclusive,
+      int maxInclusive,
+      String jsonTypeName,
+      IntFunction<Number> narrow)
+      throws IOException {
+    if (in.peek() == JsonToken.NULL) {
+      in.nextNull();
+      return null;
+    }
+    int intValue;
+    try {
+      intValue = in.nextInt();
+    } catch (NumberFormatException e) {
+      throw new JsonSyntaxException(e);
+    }
+    if (intValue > maxInclusive || intValue < minInclusive) {
+      throw new JsonSyntaxException(
+          "Lossy conversion from "
+              + intValue
+              + " to "
+              + jsonTypeName
+              + "; at path "
+              + in.getPreviousPath());
+    }
+    return narrow.apply(intValue);
+  }
+
+  private static Number readNullableInt(JsonReader in) throws IOException {
+    if (in.peek() == JsonToken.NULL) {
+      in.nextNull();
+      return null;
+    }
+    try {
+      return in.nextInt();
+    } catch (NumberFormatException e) {
+      throw new JsonSyntaxException(e);
+    }
+  }
+
+  private static Number readNullableLong(JsonReader in) throws IOException {
+    if (in.peek() == JsonToken.NULL) {
+      in.nextNull();
+      return null;
+    }
+    try {
+      return in.nextLong();
+    } catch (NumberFormatException e) {
+      throw new JsonSyntaxException(e);
+    }
+  }
+
+  @FunctionalInterface
+  private interface IntegralNumberWriter {
+    void write(JsonWriter out, Number value) throws IOException;
+  }
+
+  private static void writeNumberOrNull(JsonWriter out, Number value, IntegralNumberWriter writer)
+      throws IOException {
+    if (value == null) {
+      out.nullValue();
+    } else {
+      writer.write(out, value);
+    }
   }
 
   @SuppressWarnings("rawtypes")
@@ -190,32 +262,14 @@ public final class TypeAdapters {
       new TypeAdapter<Number>() {
         @Override
         public Number read(JsonReader in) throws IOException {
-          if (in.peek() == JsonToken.NULL) {
-            in.nextNull();
-            return null;
-          }
-
-          int intValue;
-          try {
-            intValue = in.nextInt();
-          } catch (NumberFormatException e) {
-            throw new JsonSyntaxException(e);
-          }
           // Allow up to 255 to support unsigned values
-          if (intValue > 255 || intValue < Byte.MIN_VALUE) {
-            throw new JsonSyntaxException(
-                "Lossy conversion from " + intValue + " to byte; at path " + in.getPreviousPath());
-          }
-          return (byte) intValue;
+          return readIntegralNumberWithRangeCheck(
+              in, Byte.MIN_VALUE, 255, "byte", i -> (byte) i);
         }
 
         @Override
         public void write(JsonWriter out, Number value) throws IOException {
-          if (value == null) {
-            out.nullValue();
-          } else {
-            out.value(value.byteValue());
-          }
+          writeNumberOrNull(out, value, (o, n) -> o.value(n.byteValue()));
         }
       };
 
@@ -225,32 +279,14 @@ public final class TypeAdapters {
       new TypeAdapter<Number>() {
         @Override
         public Number read(JsonReader in) throws IOException {
-          if (in.peek() == JsonToken.NULL) {
-            in.nextNull();
-            return null;
-          }
-
-          int intValue;
-          try {
-            intValue = in.nextInt();
-          } catch (NumberFormatException e) {
-            throw new JsonSyntaxException(e);
-          }
           // Allow up to 65535 to support unsigned values
-          if (intValue > 65535 || intValue < Short.MIN_VALUE) {
-            throw new JsonSyntaxException(
-                "Lossy conversion from " + intValue + " to short; at path " + in.getPreviousPath());
-          }
-          return (short) intValue;
+          return readIntegralNumberWithRangeCheck(
+              in, Short.MIN_VALUE, 65535, "short", i -> (short) i);
         }
 
         @Override
         public void write(JsonWriter out, Number value) throws IOException {
-          if (value == null) {
-            out.nullValue();
-          } else {
-            out.value(value.shortValue());
-          }
+          writeNumberOrNull(out, value, (o, n) -> o.value(n.shortValue()));
         }
       };
 
@@ -261,24 +297,12 @@ public final class TypeAdapters {
       new TypeAdapter<Number>() {
         @Override
         public Number read(JsonReader in) throws IOException {
-          if (in.peek() == JsonToken.NULL) {
-            in.nextNull();
-            return null;
-          }
-          try {
-            return in.nextInt();
-          } catch (NumberFormatException e) {
-            throw new JsonSyntaxException(e);
-          }
+          return readNullableInt(in);
         }
 
         @Override
         public void write(JsonWriter out, Number value) throws IOException {
-          if (value == null) {
-            out.nullValue();
-          } else {
-            out.value(value.intValue());
-          }
+          writeNumberOrNull(out, value, (o, n) -> o.value(n.intValue()));
         }
       };
   public static final TypeAdapterFactory INTEGER_FACTORY =
@@ -405,24 +429,12 @@ public final class TypeAdapters {
       new TypeAdapter<Number>() {
         @Override
         public Number read(JsonReader in) throws IOException {
-          if (in.peek() == JsonToken.NULL) {
-            in.nextNull();
-            return null;
-          }
-          try {
-            return in.nextLong();
-          } catch (NumberFormatException e) {
-            throw new JsonSyntaxException(e);
-          }
+          return readNullableLong(in);
         }
 
         @Override
         public void write(JsonWriter out, Number value) throws IOException {
-          if (value == null) {
-            out.nullValue();
-          } else {
-            out.value(value.longValue());
-          }
+          writeNumberOrNull(out, value, (o, n) -> o.value(n.longValue()));
         }
       };
 

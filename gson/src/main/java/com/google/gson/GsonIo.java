@@ -84,7 +84,7 @@ final class GsonIo {
     }
 
     void ensureOpen() {
-      // Intentionally emptyo avoid "resource is never referenced" warnings with -Werror.
+      // Intentionally empty; avoids "resource is never referenced" warnings with -Werror.
     }
 
     @Override
@@ -107,6 +107,10 @@ final class GsonIo {
     private ReaderContext(JsonReader reader, Strictness oldStrictness) {
       this.reader = reader;
       this.oldStrictness = oldStrictness;
+    }
+
+    void ensureOpen() {
+      // Intentionally empty; avoids "resource is never referenced" warnings with -Werror.
     }
 
     @Override
